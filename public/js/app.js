@@ -1,6 +1,8 @@
 // Solana Financial Hub - Frontend Application
-// This is a web demo - for native Android app, we'll use React Native with Mobile Wallet Adapter
+// Production version with real wallet detection
 
+// Genesis Token Configuration
+const GENESIS_TOKEN_MINT = '9USAzZqpZrXYb8JHP1tvHh37YVFNj65TRhwZynnfMNxH';
 
 // API Base URL
 const API_BASE = window.location.origin;
@@ -11,7 +13,8 @@ const state = {
     user: null,
     hasGenesis: false,
     subscriptionActive: false,
-    currentTab: 'bills'
+    currentTab: 'bills',
+    walletAdapter: null
 };
 
 // Utility Functions
@@ -69,25 +72,92 @@ function switchTab(tabName) {
     }
 }
 
-// Wallet Connection (Simulated for web demo)
+// Real Wallet Connection - Detects Phantom, Solflare, Backpack, Seeker, etc.
 document.getElementById('connect-wallet').addEventListener('click', async () => {
     try {
         showLoading();
         
-        // In production, use Phantom/Solflare wallet adapter
-        // For demo, simulate wallet connection
-        const mockWallet = prompt('Enter wallet address (or leave blank for demo):') || 
-                          'Demo' + Math.random().toString(36).substring(7);
+        // Detect available wallets
+        const wallets = detectWallets();
         
-        await connectWallet(mockWallet);
+        if (wallets.length === 0) {
+            hideLoading();
+            showToast('No Solana wallet detected! Please install Phantom, Solflare, or another Solana wallet.', 'error');
+            return;
+        }
+        
+        // If multiple wallets, let user choose
+        let selectedWallet = wallets[0];
+        if (wallets.length > 1) {
+            const walletNames = wallets.map(w => w.name).join('\n');
+            const choice = prompt(`Multiple wallets detected:\n\n${walletNames}\n\nEnter wallet name:`);
+            selectedWallet = wallets.find(w => w.name.toLowerCase() === choice.toLowerCase()) || wallets[0];
+        }
+        
+        // Connect to wallet
+        await selectedWallet.adapter.connect();
+        const publicKey = selectedWallet.adapter.publicKey.toString();
+        
+        // Store wallet info
+        state.walletAdapter = selectedWallet.adapter;
+        await connectWallet(publicKey);
+        
+        // Update UI
+        document.getElementById('connect-wallet').style.display = 'none';
+        document.getElementById('wallet-info').style.display = 'block';
+        document.querySelector('.wallet-address').textContent = 
+            `${selectedWallet.name}: ${formatWalletAddress(publicKey)}`;
         
         hideLoading();
-        showToast('Wallet connected successfully!');
+        showToast(`Connected to ${selectedWallet.name}!`);
+        
     } catch (error) {
         hideLoading();
+        console.error('Wallet connection error:', error);
         showToast('Failed to connect wallet: ' + error.message, 'error');
     }
 });
+
+function detectWallets() {
+    const wallets = [];
+    
+    // Detect Seeker (priority for Seeker phones)
+    if (window.seeker) {
+        wallets.push({ name: 'Seeker', adapter: window.seeker });
+    }
+    
+    // Detect Phantom
+    if (window.solana?.isPhantom) {
+        wallets.push({ name: 'Phantom', adapter: window.solana });
+    }
+    
+    // Detect Solflare
+    if (window.solflare?.isSolflare) {
+        wallets.push({ name: 'Solflare', adapter: window.solflare });
+    }
+    
+    // Detect Backpack
+    if (window.backpack?.isBackpack) {
+        wallets.push({ name: 'Backpack', adapter: window.backpack });
+    }
+    
+    // Detect Glow
+    if (window.glow) {
+        wallets.push({ name: 'Glow', adapter: window.glow });
+    }
+    
+    // Detect Exodus
+    if (window.exodus?.solana) {
+        wallets.push({ name: 'Exodus', adapter: window.exodus.solana });
+    }
+    
+    // Detect Coin98
+    if (window.coin98?.sol) {
+        wallets.push({ name: 'Coin98', adapter: window.coin98.sol });
+    }
+    
+    return wallets;
+}
 
 async function connectWallet(walletAddress) {
     try {
@@ -99,103 +169,63 @@ async function connectWallet(walletAddress) {
         
         const data = await response.json();
         
-        if (!data.success) {
-            throw new Error(data.error);
+        state.wallet = walletAddress;
+        state.user = walletAddress;
+        state.hasGenesis = data.hasGenesis || false;
+        state.subscriptionActive = data.subscriptionActive || false;
+        
+        // Check for Genesis Token
+        await checkGenesisToken(walletAddress);
+        
+        // Show/hide Genesis banner
+        if (state.hasGenesis) {
+            document.getElementById('genesis-banner').style.display = 'block';
+            document.querySelector('.genesis-badge').style.display = 'block';
+            showToast('🎉 Genesis Token Holder - 50% OFF!', 'success');
+        } else {
+            document.getElementById('subscription-notice').style.display = 'block';
         }
         
-        state.wallet = walletAddress;
-        state.user = data.user;
-        state.hasGenesis = data.user.hasGenesis;
-        state.subscriptionActive = data.user.subscriptionActive;
-        
-        updateUI();
+        // Load initial data
+        loadTabData(state.currentTab);
     } catch (error) {
         console.error('Connect wallet error:', error);
         throw error;
     }
 }
 
-function updateUI() {
-    const connectBtn = document.getElementById('connect-wallet');
-    const walletInfo = document.getElementById('wallet-info');
-    const genesisBanner = document.getElementById('genesis-banner');
-    const subscriptionNotice = document.getElementById('subscription-notice');
-    
-    if (state.wallet) {
-        connectBtn.style.display = 'none';
-        walletInfo.style.display = 'block';
-        walletInfo.querySelector('.wallet-address').textContent = formatWalletAddress(state.wallet);
-        
-        // Show Genesis badge if user has token
-        if (state.hasGenesis) {
-            walletInfo.querySelector('.genesis-badge').style.display = 'block';
-            genesisBanner.style.display = 'block';
-            subscriptionNotice.style.display = 'none';
-        } else {
-            // Show subscription notice for non-Genesis holders
-            if (!state.subscriptionActive) {
-                subscriptionNotice.style.display = 'block';
-            }
-        }
-        
-        // Load data for current tab
-        loadTabData(state.currentTab);
-    }
-}
-
-// Subscribe Button
-document.getElementById('subscribe-btn')?.addEventListener('click', async () => {
-    if (!state.wallet) {
-        showToast('Please connect wallet first', 'error');
-        return;
-    }
-    
+async function checkGenesisToken(walletAddress) {
     try {
-        showLoading();
-        
-        const response = await fetch(`${API_BASE}/api/subscriptions/platform/subscribe`, {
+        const response = await fetch(`${API_BASE}/api/genesis/check`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walletAddress: state.wallet })
+            body: JSON.stringify({ 
+                walletAddress,
+                genesisMint: GENESIS_TOKEN_MINT
+            })
         });
         
         const data = await response.json();
         
-        if (!data.success) {
-            throw new Error(data.error);
+        if (data.hasGenesis) {
+            state.hasGenesis = true;
+            console.log('✅ Genesis Token holder verified!');
+        } else {
+            state.hasGenesis = false;
+            console.log('❌ No Genesis Token found');
         }
         
-        // In production, sign and send transaction
-        // For demo, simulate payment
-        const mockSignature = 'sig' + Math.random().toString(36).substring(7);
-        
-        const confirmResponse = await fetch(`${API_BASE}/api/subscriptions/platform/confirm`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                walletAddress: state.wallet,
-                signature: mockSignature
-            })
-        });
-        
-        const confirmData = await confirmResponse.json();
-        
-        if (confirmData.success) {
-            state.subscriptionActive = true;
-            document.getElementById('subscription-notice').style.display = 'none';
-            showToast('Subscription activated! Welcome aboard! 🎉');
-        }
-        
-        hideLoading();
+        return state.hasGenesis;
     } catch (error) {
-        hideLoading();
-        showToast('Subscription failed: ' + error.message, 'error');
+        console.error('Genesis check error:', error);
+        return false;
     }
-});
+}
 
-// Load Tab Data
 async function loadTabData(tabName) {
-    switch (tabName) {
+    if (!state.wallet) return;
+    
+    switch(tabName) {
         case 'bills':
             await loadBills();
             break;
@@ -208,94 +238,17 @@ async function loadTabData(tabName) {
     }
 }
 
-// === BILLS TAB ===
-document.getElementById('create-bill-btn').addEventListener('click', () => {
-    document.getElementById('create-bill-form').style.display = 'block';
-});
-
-document.getElementById('cancel-bill').addEventListener('click', () => {
-    document.getElementById('create-bill-form').style.display = 'none';
-    document.getElementById('bill-form').reset();
-});
-
-document.getElementById('add-participant').addEventListener('click', () => {
-    const participantsList = document.getElementById('participants-list');
-    const newParticipant = document.createElement('div');
-    newParticipant.className = 'participant-item';
-    newParticipant.innerHTML = `
-        <input type="text" class="participant-address" placeholder="Wallet Address" required>
-        <input type="number" class="participant-amount" placeholder="Amount (SOL)" step="0.01" required>
-        <button type="button" class="btn-remove">Remove</button>
-    `;
-    participantsList.appendChild(newParticipant);
-    
-    newParticipant.querySelector('.btn-remove').addEventListener('click', () => {
-        newParticipant.remove();
-    });
-});
-
-document.getElementById('bill-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
+// Bills Management
+async function loadBills() {
     try {
         showLoading();
+        const response = await fetch(`${API_BASE}/api/bills?wallet=${state.wallet}`);
+        const bills = await response.json();
         
-        const title = document.getElementById('bill-title').value;
-        const totalAmount = parseFloat(document.getElementById('bill-total').value);
-        
-        const participants = [];
-        document.querySelectorAll('.participant-item').forEach(item => {
-            const address = item.querySelector('.participant-address').value;
-            const amount = parseFloat(item.querySelector('.participant-amount').value);
-            if (address && amount) {
-                participants.push({ address, amount });
-            }
-        });
-        
-        const response = await fetch(`${API_BASE}/api/bills/create`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                walletAddress: state.wallet,
-                title,
-                totalAmount,
-                participants
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (!data.success) {
-            throw new Error(data.error);
-        }
-        
-        document.getElementById('create-bill-form').style.display = 'none';
-        document.getElementById('bill-form').reset();
-        
-        showToast('Bill created successfully!');
-        await loadBills();
-        
+        renderBills(bills);
         hideLoading();
     } catch (error) {
         hideLoading();
-        showToast('Failed to create bill: ' + error.message, 'error');
-    }
-});
-
-async function loadBills() {
-    if (!state.wallet) return;
-    
-    try {
-        const response = await fetch(`${API_BASE}/api/bills/user/${state.wallet}`);
-        const data = await response.json();
-        
-        if (!data.success) {
-            throw new Error(data.error);
-        }
-        
-        renderBills(data.bills || []);
-    } catch (error) {
-        console.error('Load bills error:', error);
         showToast('Failed to load bills', 'error');
     }
 }
@@ -304,426 +257,349 @@ function renderBills(bills) {
     const container = document.getElementById('bills-list');
     
     if (bills.length === 0) {
-        container.innerHTML = `
-            <div class="list-item" style="text-align: center; padding: 40px;">
-                <p style="color: var(--text-secondary);">No bills yet. Create your first bill split!</p>
-            </div>
-        `;
+        container.innerHTML = '<p class="empty-state">No bills yet. Create your first bill to split expenses!</p>';
         return;
     }
     
     container.innerHTML = bills.map(bill => `
-        <div class="list-item">
-            <div class="list-item-header">
-                <div>
-                    <div class="list-item-title">${bill.title}</div>
-                    <span class="status-badge status-${bill.status}">${bill.status.toUpperCase()}</span>
-                </div>
-                <div class="list-item-amount">${formatSOL(bill.totalAmount)}</div>
+        <div class="bill-item">
+            <div class="bill-header">
+                <h4>${bill.description}</h4>
+                <span class="bill-status ${bill.status}">${bill.status}</span>
             </div>
-            <div class="list-item-meta">
-                <span>👥 ${bill.participants.length} participants</span>
-                <span>💰 Fee: ${formatSOL(bill.feeBreakdown.finalFee)}</span>
-                ${bill.feeBreakdown.hasGenesisDiscount ? '<span>⭐ Genesis Discount Applied</span>' : ''}
-                <span>📅 ${new Date(bill.createdAt).toLocaleDateString()}</span>
+            <div class="bill-details">
+                <p>Total Amount: ${formatSOL(bill.amount)}</p>
+                <p>Split Between: ${bill.participants} people</p>
+                <p>Your Share: ${formatSOL(bill.yourShare)}</p>
+            </div>
+            <div class="bill-actions">
+                ${bill.status === 'pending' ? `
+                    <button onclick="payBillShare('${bill.id}')" class="btn btn-primary">Pay Share</button>
+                ` : ''}
+                <button onclick="viewBillDetails('${bill.id}')" class="btn btn-secondary">View Details</button>
             </div>
         </div>
     `).join('');
 }
 
-// === SUBSCRIPTIONS TAB ===
-document.getElementById('add-subscription-btn').addEventListener('click', () => {
-    document.getElementById('subscription-form').style.display = 'block';
-    // Set default next billing date to today
-    document.getElementById('sub-next-billing').valueAsDate = new Date();
+document.getElementById('new-bill-btn').addEventListener('click', () => {
+    document.getElementById('bill-modal').style.display = 'block';
 });
 
-document.getElementById('cancel-sub').addEventListener('click', () => {
-    document.getElementById('subscription-form').style.display = 'none';
-    document.getElementById('sub-form').reset();
-});
-
-document.getElementById('sub-form').addEventListener('submit', async (e) => {
+document.getElementById('create-bill-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     try {
         showLoading();
         
-        const name = document.getElementById('sub-name').value;
-        const amount = parseFloat(document.getElementById('sub-amount').value);
-        const billingCycle = document.getElementById('sub-cycle').value;
-        const category = document.getElementById('sub-category').value;
-        const nextBillingDate = document.getElementById('sub-next-billing').value;
+        const formData = {
+            description: document.getElementById('bill-description').value,
+            amount: document.getElementById('bill-amount').value,
+            participants: document.getElementById('bill-participants').value.split(',').map(p => p.trim()),
+            wallet: state.wallet
+        };
         
-        const response = await fetch(`${API_BASE}/api/subscriptions/create`, {
+        const response = await fetch(`${API_BASE}/api/bills`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                walletAddress: state.wallet,
-                name,
-                amount,
-                billingCycle,
-                category,
-                nextBillingDate
-            })
+            body: JSON.stringify(formData)
         });
         
-        const data = await response.json();
-        
-        if (!data.success) {
-            throw new Error(data.error);
+        if (response.ok) {
+            document.getElementById('bill-modal').style.display = 'none';
+            document.getElementById('create-bill-form').reset();
+            await loadBills();
+            showToast('Bill created successfully!');
         }
-        
-        document.getElementById('subscription-form').style.display = 'none';
-        document.getElementById('sub-form').reset();
-        
-        showToast('Subscription added successfully!');
-        await loadSubscriptions();
         
         hideLoading();
     } catch (error) {
         hideLoading();
-        showToast('Failed to add subscription: ' + error.message, 'error');
+        showToast('Failed to create bill', 'error');
     }
 });
 
-async function loadSubscriptions() {
-    if (!state.wallet) return;
+async function payBillShare(billId) {
+    if (!state.walletAdapter) {
+        showToast('Please reconnect your wallet', 'error');
+        return;
+    }
     
     try {
-        const response = await fetch(`${API_BASE}/api/subscriptions/user/${state.wallet}`);
-        const data = await response.json();
+        showLoading();
         
-        if (!data.success) {
-            throw new Error(data.error);
-        }
+        // Get payment details
+        const response = await fetch(`${API_BASE}/api/bills/${billId}/payment-details`);
+        const details = await response.json();
         
-        renderSubscriptions(data.subscriptions || [], data.analytics);
+        // Create Solana transaction
+        const transaction = await createPaymentTransaction(details);
+        
+        // Sign and send with wallet
+        const signature = await state.walletAdapter.signAndSendTransaction(transaction);
+        
+        // Confirm payment on backend
+        await fetch(`${API_BASE}/api/bills/${billId}/confirm-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signature, wallet: state.wallet })
+        });
+        
+        await loadBills();
+        hideLoading();
+        showToast('Payment successful!');
+        
     } catch (error) {
-        console.error('Load subscriptions error:', error);
+        hideLoading();
+        showToast('Payment failed: ' + error.message, 'error');
+    }
+}
+
+// Subscriptions Management
+async function loadSubscriptions() {
+    try {
+        showLoading();
+        const response = await fetch(`${API_BASE}/api/subscriptions?wallet=${state.wallet}`);
+        const subscriptions = await response.json();
+        
+        renderSubscriptions(subscriptions);
+        hideLoading();
+    } catch (error) {
+        hideLoading();
         showToast('Failed to load subscriptions', 'error');
     }
 }
 
-function renderSubscriptions(subscriptions, analytics) {
-    const analyticsContainer = document.getElementById('subscriptions-analytics');
-    const listContainer = document.getElementById('subscriptions-list');
+function renderSubscriptions(subscriptions) {
+    const container = document.getElementById('subscriptions-list');
     
-    // Render analytics
-    if (analytics) {
-        analyticsContainer.innerHTML = `
-            <h3>📊 Subscription Analytics</h3>
-            <div class="analytics-grid">
-                <div class="analytics-item">
-                    <div class="analytics-label">Active Subscriptions</div>
-                    <div class="analytics-value">${analytics.totalActive}</div>
-                </div>
-                <div class="analytics-item">
-                    <div class="analytics-label">Monthly Spend</div>
-                    <div class="analytics-value">${formatSOL(analytics.totalMonthlySpend)}</div>
-                </div>
-                <div class="analytics-item">
-                    <div class="analytics-label">Annual Spend</div>
-                    <div class="analytics-value">${formatSOL(analytics.annualizedSpend)}</div>
-                </div>
-            </div>
-        `;
-    }
-    
-    // Render subscriptions list
     if (subscriptions.length === 0) {
-        listContainer.innerHTML = `
-            <div class="list-item" style="text-align: center; padding: 40px;">
-                <p style="color: var(--text-secondary);">No subscriptions tracked yet. Add your first subscription!</p>
-            </div>
-        `;
+        container.innerHTML = '<p class="empty-state">No active subscriptions. Add one to start tracking!</p>';
         return;
     }
     
-    listContainer.innerHTML = subscriptions.map(sub => `
-        <div class="list-item">
-            <div class="list-item-header">
-                <div>
-                    <div class="list-item-title">${sub.name}</div>
-                    <span class="status-badge status-${sub.status}">${sub.status.toUpperCase()}</span>
-                </div>
-                <div class="list-item-amount">${formatSOL(sub.amount)}/${sub.billingCycle}</div>
+    container.innerHTML = subscriptions.map(sub => `
+        <div class="subscription-item">
+            <div class="subscription-header">
+                <h4>${sub.name}</h4>
+                <span class="subscription-status ${sub.active ? 'active' : 'inactive'}">
+                    ${sub.active ? 'Active' : 'Inactive'}
+                </span>
             </div>
-            <div class="list-item-meta">
-                <span>📁 ${sub.category}</span>
-                <span>📅 Next billing: ${new Date(sub.nextBillingDate).toLocaleDateString()}</span>
+            <div class="subscription-details">
+                <p>Amount: ${formatSOL(sub.amount)}</p>
+                <p>Frequency: ${sub.frequency}</p>
+                <p>Next Payment: ${new Date(sub.nextPayment).toLocaleDateString()}</p>
             </div>
-            ${sub.status === 'active' ? `
-                <button class="btn btn-secondary" style="margin-top: 12px;" onclick="cancelSubscription('${sub.id}')">
-                    Cancel Subscription
-                </button>
-            ` : ''}
+            <div class="subscription-actions">
+                <button onclick="cancelSubscription('${sub.id}')" class="btn btn-danger">Cancel</button>
+            </div>
         </div>
     `).join('');
 }
 
-async function cancelSubscription(subId) {
-    if (!confirm('Are you sure you want to cancel this subscription?')) {
-        return;
-    }
-    
-    try {
-        showLoading();
-        
-        const response = await fetch(`${API_BASE}/api/subscriptions/${subId}/cancel`, {
-            method: 'PUT'
-        });
-        
-        const data = await response.json();
-        
-        if (!data.success) {
-            throw new Error(data.error);
-        }
-        
-        showToast('Subscription cancelled');
-        await loadSubscriptions();
-        
-        hideLoading();
-    } catch (error) {
-        hideLoading();
-        showToast('Failed to cancel subscription: ' + error.message, 'error');
-    }
-}
-
-// === EXPENSES TAB ===
-document.getElementById('add-expense-btn').addEventListener('click', () => {
-    document.getElementById('expense-form').style.display = 'block';
-    // Set default date to today
-    document.getElementById('exp-date').valueAsDate = new Date();
+document.getElementById('add-subscription-btn').addEventListener('click', () => {
+    document.getElementById('subscription-modal').style.display = 'block';
 });
 
-document.getElementById('cancel-exp').addEventListener('click', () => {
-    document.getElementById('expense-form').style.display = 'none';
-    document.getElementById('exp-form').reset();
-});
-
-document.getElementById('exp-form').addEventListener('submit', async (e) => {
+document.getElementById('add-subscription-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     try {
         showLoading();
         
-        const amount = parseFloat(document.getElementById('exp-amount').value);
-        const category = document.getElementById('exp-category').value;
-        const description = document.getElementById('exp-description').value;
-        const date = document.getElementById('exp-date').value;
-        const transactionHash = document.getElementById('exp-hash').value;
+        const formData = {
+            name: document.getElementById('subscription-name').value,
+            amount: document.getElementById('subscription-amount').value,
+            frequency: document.getElementById('subscription-frequency').value,
+            wallet: state.wallet
+        };
         
-        const response = await fetch(`${API_BASE}/api/expenses/create`, {
+        const response = await fetch(`${API_BASE}/api/subscriptions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                walletAddress: state.wallet,
-                amount,
-                category,
-                description,
-                date,
-                transactionHash
-            })
+            body: JSON.stringify(formData)
         });
         
-        const data = await response.json();
-        
-        if (!data.success) {
-            throw new Error(data.error);
+        if (response.ok) {
+            document.getElementById('subscription-modal').style.display = 'none';
+            document.getElementById('add-subscription-form').reset();
+            await loadSubscriptions();
+            showToast('Subscription added successfully!');
         }
-        
-        document.getElementById('expense-form').style.display = 'none';
-        document.getElementById('exp-form').reset();
-        
-        showToast('Expense added successfully!');
-        await loadExpenses();
         
         hideLoading();
     } catch (error) {
         hideLoading();
-        showToast('Failed to add expense: ' + error.message, 'error');
+        showToast('Failed to add subscription', 'error');
     }
 });
 
-document.getElementById('export-tax-btn').addEventListener('click', async () => {
-    if (!state.wallet) {
-        showToast('Please connect wallet first', 'error');
-        return;
-    }
+async function cancelSubscription(subId) {
+    if (!confirm('Are you sure you want to cancel this subscription?')) return;
     
     try {
         showLoading();
         
-        const year = new Date().getFullYear();
-        const response = await fetch(`${API_BASE}/api/expenses/tax-export/${state.wallet}?year=${year}`);
-        const data = await response.json();
+        await fetch(`${API_BASE}/api/subscriptions/${subId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: state.wallet })
+        });
         
-        if (!data.success) {
-            throw new Error(data.error);
-        }
-        
-        // Download CSV file
-        const blob = new Blob([data.csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `tax-export-${year}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-        
-        showToast(`Tax export downloaded! Total deductible: ${formatSOL(data.summary.totalDeductible)}`);
-        
+        await loadSubscriptions();
         hideLoading();
+        showToast('Subscription cancelled');
+        
     } catch (error) {
         hideLoading();
-        showToast('Failed to export tax data: ' + error.message, 'error');
+        showToast('Failed to cancel subscription', 'error');
     }
-});
+}
 
+// Expenses Management
 async function loadExpenses() {
-    if (!state.wallet) return;
-    
     try {
-        const [expensesResponse, analyticsResponse] = await Promise.all([
-            fetch(`${API_BASE}/api/expenses/user/${state.wallet}`),
-            fetch(`${API_BASE}/api/expenses/analytics/${state.wallet}`)
-        ]);
+        showLoading();
+        const response = await fetch(`${API_BASE}/api/expenses?wallet=${state.wallet}`);
+        const expenses = await response.json();
         
-        const expensesData = await expensesResponse.json();
-        const analyticsData = await analyticsResponse.json();
-        
-        if (!expensesData.success || !analyticsData.success) {
-            throw new Error('Failed to load expenses');
-        }
-        
-        renderExpenses(expensesData.expenses || [], analyticsData.analytics);
+        renderExpenses(expenses);
+        renderExpenseAnalytics(expenses);
+        hideLoading();
     } catch (error) {
-        console.error('Load expenses error:', error);
+        hideLoading();
         showToast('Failed to load expenses', 'error');
     }
 }
 
-function renderExpenses(expenses, analytics) {
-    const analyticsContainer = document.getElementById('expenses-analytics');
-    const listContainer = document.getElementById('expenses-list');
+function renderExpenses(expenses) {
+    const container = document.getElementById('expenses-list');
     
-    // Render analytics
-    if (analytics) {
-        const topCategory = Object.entries(analytics.byCategory)
-            .sort((a, b) => b[1] - a[1])[0];
-        
-        analyticsContainer.innerHTML = `
-            <h3>📊 Expense Analytics</h3>
-            <div class="analytics-grid">
-                <div class="analytics-item">
-                    <div class="analytics-label">Total Expenses</div>
-                    <div class="analytics-value">${analytics.totalExpenses}</div>
-                </div>
-                <div class="analytics-item">
-                    <div class="analytics-label">Total Spent</div>
-                    <div class="analytics-value">${formatSOL(analytics.totalSpent)}</div>
-                </div>
-                ${topCategory ? `
-                    <div class="analytics-item">
-                        <div class="analytics-label">Top Category</div>
-                        <div class="analytics-value" style="font-size: 18px;">${topCategory[0]}</div>
-                        <div style="font-size: 14px; opacity: 0.9;">${formatSOL(topCategory[1])}</div>
-                    </div>
-                ` : ''}
-            </div>
-        `;
-    }
-    
-    // Render expenses list
     if (expenses.length === 0) {
-        listContainer.innerHTML = `
-            <div class="list-item" style="text-align: center; padding: 40px;">
-                <p style="color: var(--text-secondary);">No expenses tracked yet. Add your first expense!</p>
-            </div>
-        `;
+        container.innerHTML = '<p class="empty-state">No expenses tracked yet. Add your first expense!</p>';
         return;
     }
     
-    listContainer.innerHTML = expenses.sort((a, b) => new Date(b.date) - new Date(a.date)).map(exp => {
-        const taxDeductible = ['Business', 'Office', 'Travel', 'Professional Services'].includes(exp.category);
-        
-        return `
-            <div class="list-item">
-                <div class="list-item-header">
-                    <div>
-                        <div class="list-item-title">${exp.description || exp.category}</div>
-                        <span class="status-badge" style="background: var(--surface-light); color: var(--text-primary);">
-                            ${exp.category}
-                        </span>
-                        ${taxDeductible ? '<span class="status-badge status-active">Tax Deductible</span>' : ''}
-                    </div>
-                    <div class="list-item-amount">${formatSOL(exp.amount)}</div>
-                </div>
-                <div class="list-item-meta">
-                    <span>📅 ${new Date(exp.date).toLocaleDateString()}</span>
-                    ${exp.transactionHash ? `<span>🔗 ${formatWalletAddress(exp.transactionHash)}</span>` : ''}
-                </div>
+    container.innerHTML = expenses.map(exp => `
+        <div class="expense-item">
+            <div class="expense-header">
+                <h4>${exp.description}</h4>
+                <span class="expense-category">${exp.category}</span>
             </div>
-        `;
-    }).join('');
+            <div class="expense-details">
+                <p>Amount: ${formatSOL(exp.amount)}</p>
+                <p>Date: ${new Date(exp.date).toLocaleDateString()}</p>
+                ${exp.transactionHash ? `<p>TX: ${formatWalletAddress(exp.transactionHash)}</p>` : ''}
+            </div>
+        </div>
+    `).join('');
 }
 
-// Make cancelSubscription available globally
-window.cancelSubscription = cancelSubscription;
+function renderExpenseAnalytics(expenses) {
+    const analyticsContainer = document.getElementById('expense-analytics');
+    
+    // Calculate analytics
+    const totalExpenses = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+    const byCategory = expenses.reduce((acc, exp) => {
+        acc[exp.category] = (acc[exp.category] || 0) + parseFloat(exp.amount);
+        return acc;
+    }, {});
+    
+    analyticsContainer.innerHTML = `
+        <h3>📊 Expense Analytics</h3>
+        <div class="analytics-grid">
+            <div class="analytics-item">
+                <div class="analytics-label">Total Expenses</div>
+                <div class="analytics-value">${formatSOL(totalExpenses)}</div>
+            </div>
+            ${Object.entries(byCategory).map(([category, amount]) => `
+                <div class="analytics-item">
+                    <div class="analytics-label">${category}</div>
+                    <div class="analytics-value">${formatSOL(amount)}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
 
+document.getElementById('add-expense-btn').addEventListener('click', () => {
+    document.getElementById('expense-modal').style.display = 'block';
+});
 
-
-// ============================================
-// WALLET CONNECTION - SIMPLE VERSION
-// ============================================
-
-window.addEventListener('load', () => {
-    if (typeof WalletDetector !== 'undefined') {
-        initializeWallet();
+document.getElementById('add-expense-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    try {
+        showLoading();
+        
+        const formData = {
+            description: document.getElementById('expense-description').value,
+            amount: document.getElementById('expense-amount').value,
+            category: document.getElementById('expense-category').value,
+            wallet: state.wallet
+        };
+        
+        const response = await fetch(`${API_BASE}/api/expenses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+        
+        if (response.ok) {
+            document.getElementById('expense-modal').style.display = 'none';
+            document.getElementById('add-expense-form').reset();
+            await loadExpenses();
+            showToast('Expense added successfully!');
+        }
+        
+        hideLoading();
+    } catch (error) {
+        hideLoading();
+        showToast('Failed to add expense', 'error');
     }
 });
 
-async function initializeWallet() {
-    const walletDetector = new WalletDetector();
+// Helper function to create Solana payment transaction
+async function createPaymentTransaction(details) {
+    // This would use @solana/web3.js to create actual transaction
+    // Placeholder for now - implement based on your backend API
+    const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = window.solanaWeb3 || {};
     
-    const connectBtn = document.getElementById('connect-wallet');
-    if (connectBtn) {
-        connectBtn.addEventListener('click', async () => {
-            try {
-                const wallets = await walletDetector.detectAllWallets();
-                
-                if (wallets.length === 0) {
-                    alert('No Solana wallet detected!\n\nPlease install:\n• Phantom\n• Solflare\n• Seeker\n• Backpack');
-                    return;
-                }
-                
-                let walletName = wallets.length === 1 ? wallets[0].name : 
-                    prompt(`Choose wallet:\n\n${wallets.map((w, i) => `${i+1}. ${w.name}`).join('\n')}\n\nEnter wallet name:`);
-                
-                if (!walletName) return;
-                
-                const connected = await walletDetector.connect(walletName);
-                
-                // Update UI
-                connectBtn.style.display = 'none';
-                document.getElementById('wallet-info').style.display = 'block';
-                document.querySelector('.wallet-address').textContent = 
-                    `${connected.name}: ${connected.publicKey.slice(0,4)}...${connected.publicKey.slice(-4)}`;
-                
-                // Update state
-                state.wallet = connected.publicKey;
-                state.user = connected.publicKey;
-                
-                console.log('✅ Connected to', connected.name);
-                
-            } catch (error) {
-                console.error('Connection error:', error);
-                alert('Failed to connect wallet');
-            }
-        });
+    if (!window.solanaWeb3) {
+        throw new Error('Solana Web3.js not loaded');
     }
+    
+    const connection = new Connection('https://api.mainnet-beta.solana.com');
+    const transaction = new Transaction().add(
+        SystemProgram.transfer({
+            fromPubkey: new PublicKey(state.wallet),
+            toPubkey: new PublicKey(details.recipient),
+            lamports: details.amount * LAMPORTS_PER_SOL
+        })
+    );
+    
+    transaction.feePayer = new PublicKey(state.wallet);
+    transaction.recentBlockhash = (await connection.getRecentBlockhash()).blockhash;
+    
+    return transaction;
 }
 
+// Close modals
+document.querySelectorAll('.close-modal').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.target.closest('.modal').style.display = 'none';
+    });
+});
+
+// Close modal on outside click
+window.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal')) {
+        e.target.style.display = 'none';
+    }
+});
+
+// Make functions globally available
+window.payBillShare = payBillShare;
+window.viewBillDetails = (id) => console.log('View bill:', id);
+window.cancelSubscription = cancelSubscription;
