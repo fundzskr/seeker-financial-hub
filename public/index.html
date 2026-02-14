@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana Financial Hub</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="container">
+                <div class="logo">
+                    <h1>💰 Solana Financial Hub</h1>
+                    <p class="tagline">Bill Splitting • Subscriptions • Expense Tracking</p>
+                </div>
+                <div id="wallet-section">
+                    <button id="connect-wallet" class="btn btn-primary">Connect Wallet</button>
+                    <div id="wallet-info" class="wallet-info" style="display: none;">
+                        <div class="wallet-address"></div>
+                        <div class="genesis-badge" style="display: none;">
+                            <span class="badge badge-premium">⭐ Genesis Token Holder - 50% OFF Forever!</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="container">
+                <!-- Genesis Banner -->
+                <div id="genesis-banner" class="genesis-banner" style="display: none;">
+                    <div class="banner-content">
+                        <h3>🎉 You're a Genesis Token Holder!</h3>
+                        <p>Enjoy 50% off all fees forever + exclusive rewards coming soon</p>
+                        <div class="savings-highlight">
+                            <span>Monthly: $4.99 instead of $9.99</span>
+                            <span>Transaction Fees: 0.5% instead of 1%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subscription Notice for Non-Genesis -->
+                <div id="subscription-notice" class="subscription-notice" style="display: none;">
+                    <div class="notice-content">
+                        <h3>Subscribe to unlock all features</h3>
+                        <p>Get access to bill splitting, subscription tracking, and expense management</p>
+                        <div class="pricing">
+                            <span class="price">$9.99/month</span>
+                        </div>
+                        <button id="subscribe-btn" class="btn btn-premium">Subscribe Now</button>
+                        <p class="hint">💡 Own a Seeker Genesis Token? Get 50% off forever!</p>
+                    </div>
+                </div>
+
+                <!-- Tabs Navigation -->
+                <div class="tabs">
+                    <button class="tab active" data-tab="bills">💸 Bill Splitting</button>
+                    <button class="tab" data-tab="subscriptions">🔄 Subscriptions</button>
+                    <button class="tab" data-tab="expenses">📊 Expense Tracker</button>
+                </div>
+
+                <!-- Tab Content -->
+                <div id="tab-content">
+                    <!-- Bills Tab -->
+                    <div id="bills-tab" class="tab-content active">
+                        <div class="feature-header">
+                            <h2>Split Bills Instantly</h2>
+                            <button id="create-bill-btn" class="btn btn-primary">+ New Bill</button>
+                        </div>
+                        
+                        <div id="create-bill-form" class="form-card" style="display: none;">
+                            <h3>Create New Bill</h3>
+                            <form id="bill-form">
+                                <input type="text" id="bill-title" placeholder="Bill Title (e.g., Dinner at Restaurant)" required>
+                                <input type="number" id="bill-total" placeholder="Total Amount (SOL)" step="0.01" required>
+                                
+                                <div id="participants-list">
+                                    <h4>Participants</h4>
+                                    <div class="participant-item">
+                                        <input type="text" class="participant-address" placeholder="Wallet Address" required>
+                                        <input type="number" class="participant-amount" placeholder="Amount (SOL)" step="0.01" required>
+                                        <button type="button" class="btn-remove">Remove</button>
+                                    </div>
+                                </div>
+                                
+                                <button type="button" id="add-participant" class="btn btn-secondary">+ Add Participant</button>
+                                
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">Create Bill</button>
+                                    <button type="button" id="cancel-bill" class="btn btn-secondary">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div id="bills-list" class="list-container"></div>
+                    </div>
+
+                    <!-- Subscriptions Tab -->
+                    <div id="subscriptions-tab" class="tab-content">
+                        <div class="feature-header">
+                            <h2>Manage Subscriptions</h2>
+                            <button id="add-subscription-btn" class="btn btn-primary">+ Add Subscription</button>
+                        </div>
+
+                        <div id="subscription-form" class="form-card" style="display: none;">
+                            <h3>Add Subscription</h3>
+                            <form id="sub-form">
+                                <input type="text" id="sub-name" placeholder="Service Name (e.g., Netflix)" required>
+                                <input type="number" id="sub-amount" placeholder="Amount (SOL)" step="0.01" required>
+                                <select id="sub-cycle" required>
+                                    <option value="">Select Billing Cycle</option>
+                                    <option value="monthly">Monthly</option>
+                                    <option value="yearly">Yearly</option>
+                                </select>
+                                <select id="sub-category">
+                                    <option value="Entertainment">Entertainment</option>
+                                    <option value="Software">Software</option>
+                                    <option value="Cloud Services">Cloud Services</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                                <input type="date" id="sub-next-billing" required>
+                                
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">Add Subscription</button>
+                                    <button type="button" id="cancel-sub" class="btn btn-secondary">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div id="subscriptions-analytics" class="analytics-card"></div>
+                        <div id="subscriptions-list" class="list-container"></div>
+                    </div>
+
+                    <!-- Expenses Tab -->
+                    <div id="expenses-tab" class="tab-content">
+                        <div class="feature-header">
+                            <h2>Track Expenses</h2>
+                            <div class="button-group">
+                                <button id="add-expense-btn" class="btn btn-primary">+ Add Expense</button>
+                                <button id="export-tax-btn" class="btn btn-secondary">📄 Export for Taxes</button>
+                            </div>
+                        </div>
+
+                        <div id="expense-form" class="form-card" style="display: none;">
+                            <h3>Add Expense</h3>
+                            <form id="exp-form">
+                                <input type="number" id="exp-amount" placeholder="Amount (SOL)" step="0.01" required>
+                                <select id="exp-category" required>
+                                    <option value="">Select Category</option>
+                                    <option value="Food & Dining">Food & Dining</option>
+                                    <option value="Transportation">Transportation</option>
+                                    <option value="Shopping">Shopping</option>
+                                    <option value="Entertainment">Entertainment</option>
+                                    <option value="Bills & Utilities">Bills & Utilities</option>
+                                    <option value="Business">Business (Tax Deductible)</option>
+                                    <option value="Travel">Travel (Tax Deductible)</option>
+                                    <option value="Office">Office (Tax Deductible)</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                                <input type="text" id="exp-description" placeholder="Description">
+                                <input type="date" id="exp-date" required>
+                                <input type="text" id="exp-hash" placeholder="Transaction Hash (optional)">
+                                
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">Add Expense</button>
+                                    <button type="button" id="cancel-exp" class="btn btn-secondary">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div id="expenses-analytics" class="analytics-card"></div>
+                        <div id="expenses-list" class="list-container"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="loading-overlay" style="display: none;">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div id="toast-container" class="toast-container"></div>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
