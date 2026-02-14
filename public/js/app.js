@@ -1,5 +1,8 @@
 // Solana Financial Hub - Frontend Application
-// This is a web demo - for native Android app, we'll use React Native with Mobile Wallet Adapter
+// Production version with real wallet detection and Genesis NFT verification
+
+// Genesis NFT Token Address
+const GENESIS_NFT_MINT = '9USAzZqpZrXYb8JHP1tvHh37YVFNj65TRhwZynnfMNxH';
 
 // API Base URL
 const API_BASE = window.location.origin;
@@ -10,7 +13,8 @@ const state = {
     user: null,
     hasGenesis: false,
     subscriptionActive: false,
-    currentTab: 'bills'
+    currentTab: 'bills',
+    walletAdapter: null
 };
 
 // Utility Functions
@@ -68,22 +72,66 @@ function switchTab(tabName) {
     }
 }
 
-// Wallet Connection (Simulated for web demo)
+// Real Wallet Connection with Genesis NFT Verification
 document.getElementById('connect-wallet').addEventListener('click', async () => {
     try {
         showLoading();
         
-        // In production, use Phantom/Solflare wallet adapter
-        // For demo, simulate wallet connection
-        const mockWallet = prompt('Enter wallet address (or leave blank for demo):') || 
-                          'Demo' + Math.random().toString(36).substring(7);
+        let provider = null;
+        let walletName = '';
         
-        await connectWallet(mockWallet);
+        // Detect Seeker (priority for Seeker phones)
+        if (window.seeker) {
+            provider = window.seeker;
+            walletName = 'Seeker';
+        }
+        // Detect Phantom
+        else if (window.solana?.isPhantom) {
+            provider = window.solana;
+            walletName = 'Phantom';
+        }
+        // Detect Solflare
+        else if (window.solflare) {
+            provider = window.solflare;
+            walletName = 'Solflare';
+        }
+        // Detect Backpack
+        else if (window.backpack) {
+            provider = window.backpack;
+            walletName = 'Backpack';
+        }
+        // Detect Glow
+        else if (window.glow) {
+            provider = window.glow;
+            walletName = 'Glow';
+        }
+        // No wallet detected
+        else {
+            hideLoading();
+            showToast('No Solana wallet detected! Please install Phantom, Solflare, Seeker, or another Solana wallet.', 'error');
+            return;
+        }
+        
+        // Connect to wallet
+        await provider.connect();
+        const publicKey = provider.publicKey.toString();
+        
+        // Store wallet adapter for transaction signing
+        state.walletAdapter = provider;
+        
+        // Connect to backend and check Genesis NFT
+        await connectWallet(publicKey);
+        
+        // Update UI with wallet name
+        const walletInfo = document.getElementById('wallet-info');
+        walletInfo.querySelector('.wallet-address').textContent = `${walletName}: ${formatWalletAddress(publicKey)}`;
         
         hideLoading();
-        showToast('Wallet connected successfully!');
+        showToast(`Connected to ${walletName}!`);
+        
     } catch (error) {
         hideLoading();
+        console.error('Connection error:', error);
         showToast('Failed to connect wallet: ' + error.message, 'error');
     }
 });
@@ -93,7 +141,10 @@ async function connectWallet(walletAddress) {
         const response = await fetch(`${API_BASE}/api/auth/connect`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walletAddress })
+            body: JSON.stringify({ 
+                walletAddress,
+                genesisMint: GENESIS_NFT_MINT 
+            })
         });
         
         const data = await response.json();
@@ -108,6 +159,11 @@ async function connectWallet(walletAddress) {
         state.subscriptionActive = data.user.subscriptionActive;
         
         updateUI();
+        
+        // Show special message for Genesis holders
+        if (state.hasGenesis) {
+            showToast('🎉 Genesis NFT Holder Detected! You have 50% OFF all fees!', 'success');
+        }
     } catch (error) {
         console.error('Connect wallet error:', error);
         throw error;
@@ -123,7 +179,6 @@ function updateUI() {
     if (state.wallet) {
         connectBtn.style.display = 'none';
         walletInfo.style.display = 'block';
-        walletInfo.querySelector('.wallet-address').textContent = formatWalletAddress(state.wallet);
         
         // Show Genesis badge if user has token
         if (state.hasGenesis) {
@@ -397,56 +452,33 @@ async function loadSubscriptions() {
             throw new Error(data.error);
         }
         
-        renderSubscriptions(data.subscriptions || [], data.analytics);
+        renderSubscriptions(data.subscriptions || []);
     } catch (error) {
         console.error('Load subscriptions error:', error);
         showToast('Failed to load subscriptions', 'error');
     }
 }
 
-function renderSubscriptions(subscriptions, analytics) {
-    const analyticsContainer = document.getElementById('subscriptions-analytics');
-    const listContainer = document.getElementById('subscriptions-list');
+function renderSubscriptions(subscriptions) {
+    const container = document.getElementById('subscriptions-list');
     
-    // Render analytics
-    if (analytics) {
-        analyticsContainer.innerHTML = `
-            <h3>📊 Subscription Analytics</h3>
-            <div class="analytics-grid">
-                <div class="analytics-item">
-                    <div class="analytics-label">Active Subscriptions</div>
-                    <div class="analytics-value">${analytics.totalActive}</div>
-                </div>
-                <div class="analytics-item">
-                    <div class="analytics-label">Monthly Spend</div>
-                    <div class="analytics-value">${formatSOL(analytics.totalMonthlySpend)}</div>
-                </div>
-                <div class="analytics-item">
-                    <div class="analytics-label">Annual Spend</div>
-                    <div class="analytics-value">${formatSOL(analytics.annualizedSpend)}</div>
-                </div>
-            </div>
-        `;
-    }
-    
-    // Render subscriptions list
     if (subscriptions.length === 0) {
-        listContainer.innerHTML = `
+        container.innerHTML = `
             <div class="list-item" style="text-align: center; padding: 40px;">
-                <p style="color: var(--text-secondary);">No subscriptions tracked yet. Add your first subscription!</p>
+                <p style="color: var(--text-secondary);">No subscriptions tracked. Add your first one!</p>
             </div>
         `;
         return;
     }
     
-    listContainer.innerHTML = subscriptions.map(sub => `
+    container.innerHTML = subscriptions.map(sub => `
         <div class="list-item">
             <div class="list-item-header">
                 <div>
                     <div class="list-item-title">${sub.name}</div>
                     <span class="status-badge status-${sub.status}">${sub.status.toUpperCase()}</span>
                 </div>
-                <div class="list-item-amount">${formatSOL(sub.amount)}/${sub.billingCycle}</div>
+                <div class="list-item-amount">${formatSOL(sub.amount)} / ${sub.billingCycle}</div>
             </div>
             <div class="list-item-meta">
                 <span>📁 ${sub.category}</span>
