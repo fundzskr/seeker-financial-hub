@@ -1,6 +1,164 @@
 // Solana Financial Hub - Frontend Application
 // This is a web demo - for native Android app, we'll use React Native with Mobile Wallet Adapter
 
+// ============================================
+// WALLET DETECTION & GENESIS TOKEN VERIFICATION
+// ============================================
+
+// Genesis Token Configuration
+const GENESIS_TOKEN_MINT = '9USAzZqpZrXYb8JHP1tvHh37YVFNj65TRhwZynnfMNxH'; // Replace with your actual Genesis Token mint address
+
+let walletDetector;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    walletDetector = new WalletDetector();
+    
+    // Auto-connect on Seeker phones
+    if (walletDetector.isSeekerPhone()) {
+        console.log('🔍 Seeker phone detected');
+        await walletDetector.detectAllWallets();
+        const seekerWallet = walletDetector.wallets.find(w => w.name === 'Seeker');
+        if (seekerWallet) {
+            try {
+                const connected = await walletDetector.connect('Seeker');
+                await updateWalletUI(connected);
+            } catch (e) {
+                console.log('Seeker auto-connect skipped');
+            }
+        }
+    }
+    
+    // Auto-connect for returning users
+    const autoConnected = await walletDetector.autoConnect();
+    if (autoConnected) {
+        await updateWalletUI(autoConnected);
+    }
+});
+
+// Connect Wallet Button Handler
+const connectWalletBtn = document.getElementById('connect-wallet');
+if (connectWalletBtn) {
+    connectWalletBtn.addEventListener('click', async () => {
+        try {
+            const wallets = await walletDetector.detectAllWallets();
+            
+            if (wallets.length === 0) {
+                showToast('No Solana wallet detected! Please install Phantom, Solflare, Seeker, or another wallet.', 'error');
+                return;
+            }
+            
+            let selectedWalletName;
+            if (wallets.length === 1) {
+                selectedWalletName = wallets[0].name;
+            } else {
+                const walletList = wallets.map((w, i) => `${i + 1}. ${w.name}`).join('\n');
+                selectedWalletName = prompt(`Select a wallet:\n\n${walletList}\n\nEnter wallet name:`);
+            }
+            
+            if (!selectedWalletName) return;
+            
+            const connected = await walletDetector.connect(selectedWalletName);
+            await updateWalletUI(connected);
+            
+            showToast(`Connected to ${connected.name}!`, 'success');
+            
+        } catch (error) {
+            console.error('Connection failed:', error);
+            showToast('Failed to connect wallet: ' + error.message, 'error');
+        }
+    });
+}
+
+// Update UI when wallet connects
+async function updateWalletUI(walletInfo) {
+    const connectBtn = document.getElementById('connect-wallet');
+    const walletInfoDiv = document.getElementById('wallet-info');
+    const walletAddress = document.querySelector('.wallet-address');
+    
+    if (connectBtn) connectBtn.style.display = 'none';
+    if (walletInfoDiv) walletInfoDiv.style.display = 'block';
+    if (walletAddress) {
+        walletAddress.textContent = 
+            `${walletInfo.name}: ${walletInfo.publicKey.slice(0, 4)}...${walletInfo.publicKey.slice(-4)}`;
+    }
+    
+    // Update state
+    state.wallet = walletInfo.publicKey;
+    state.user = walletInfo.publicKey;
+    
+    // Check for Genesis Token
+    const hasGenesis = await checkGenesisToken(walletInfo.publicKey);
+    state.hasGenesis = hasGenesis;
+    
+    if (hasGenesis) {
+        showGenesisUI();
+    } else {
+        showSubscriptionNotice();
+    }
+    
+    console.log('✅ Wallet UI updated');
+}
+
+// Check if wallet holds Genesis Token
+async function checkGenesisToken(walletAddress) {
+    try {
+        showLoading();
+        
+        const response = await fetch(`${API_BASE}/api/genesis/check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                walletAddress,
+                genesisMint: GENESIS_TOKEN_MINT 
+            })
+        });
+        
+        const data = await response.json();
+        hideLoading();
+        
+        if (data.hasGenesis) {
+            console.log('✅ Genesis Token holder detected!');
+            return true;
+        } else {
+            console.log('❌ No Genesis Token found');
+            return false;
+        }
+        
+    } catch (error) {
+        console.error('Genesis check error:', error);
+        hideLoading();
+        return false;
+    }
+}
+
+// Show Genesis holder UI
+function showGenesisUI() {
+    const genesisBanner = document.getElementById('genesis-banner');
+    const subscriptionNotice = document.getElementById('subscription-notice');
+    const genesisBadge = document.querySelector('.genesis-badge');
+    
+    if (genesisBanner) genesisBanner.style.display = 'block';
+    if (subscriptionNotice) subscriptionNotice.style.display = 'none';
+    if (genesisBadge) genesisBadge.style.display = 'block';
+}
+
+// Show subscription notice for non-Genesis holders
+function showSubscriptionNotice() {
+    const genesisBanner = document.getElementById('genesis-banner');
+    const subscriptionNotice = document.getElementById('subscription-notice');
+    const genesisBadge = document.querySelector('.genesis-badge');
+    
+    if (genesisBanner) genesisBanner.style.display = 'none';
+    if (subscriptionNotice) subscriptionNotice.style.display = 'block';
+    if (genesisBadge) genesisBadge.style.display = 'none';
+}
+
+// ============================================
+// END WALLET DETECTION
+// ============================================
+
+
+
 // API Base URL
 const API_BASE = window.location.origin;
 
