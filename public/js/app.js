@@ -14,7 +14,8 @@ const state = {
     hasGenesis: false,
     subscriptionActive: false,
     currentTab: 'bills',
-    walletAdapter: null
+    walletAdapter: null,
+    walletName: null
 };
 
 // Utility Functions
@@ -77,62 +78,98 @@ document.getElementById('connect-wallet').addEventListener('click', async () => 
     try {
         showLoading();
         
-        let provider = null;
-        let walletName = '';
+        // Detect all available wallets
+        const availableWallets = [];
         
-        // Detect Seeker (priority for Seeker phones)
-        if (window.seeker) {
-            provider = window.seeker;
-            walletName = 'Seeker';
-        }
-        // Detect Phantom
-        else if (window.solana?.isPhantom) {
-            provider = window.solana;
-            walletName = 'Phantom';
-        }
-        // Detect Solflare
-        else if (window.solflare) {
-            provider = window.solflare;
-            walletName = 'Solflare';
-        }
-        // Detect Backpack
-        else if (window.backpack) {
-            provider = window.backpack;
-            walletName = 'Backpack';
-        }
-        // Detect Glow
-        else if (window.glow) {
-            provider = window.glow;
-            walletName = 'Glow';
-        }
-        // No wallet detected
-        else {
+        if (window.seeker) availableWallets.push({ name: 'Seeker', adapter: window.seeker });
+        if (window.solana?.isPhantom) availableWallets.push({ name: 'Phantom', adapter: window.solana });
+        if (window.solflare) availableWallets.push({ name: 'Solflare', adapter: window.solflare });
+        if (window.backpack) availableWallets.push({ name: 'Backpack', adapter: window.backpack });
+        if (window.glow) availableWallets.push({ name: 'Glow', adapter: window.glow });
+        
+        if (availableWallets.length === 0) {
             hideLoading();
             showToast('No Solana wallet detected! Please install Phantom, Solflare, Seeker, or another Solana wallet.', 'error');
             return;
         }
         
-        // Connect to wallet
-        await provider.connect();
-        const publicKey = provider.publicKey.toString();
+        let selectedWallet;
+        
+        // If multiple wallets, let user choose
+        if (availableWallets.length > 1) {
+            hideLoading();
+            const walletNames = availableWallets.map((w, i) => `${i + 1}. ${w.name}`).join('\n');
+            const choice = prompt(`Multiple wallets detected! Choose one:\n\n${walletNames}\n\nEnter the number (1-${availableWallets.length}):`);
+            
+            if (!choice) return;
+            
+            const index = parseInt(choice) - 1;
+            if (index < 0 || index >= availableWallets.length) {
+                showToast('Invalid selection', 'error');
+                return;
+            }
+            
+            selectedWallet = availableWallets[index];
+            showLoading();
+        } else {
+            selectedWallet = availableWallets[0];
+        }
+        
+        // Connect to selected wallet
+        await selectedWallet.adapter.connect();
+        const publicKey = selectedWallet.adapter.publicKey.toString();
         
         // Store wallet adapter for transaction signing
-        state.walletAdapter = provider;
+        state.walletAdapter = selectedWallet.adapter;
+        state.walletName = selectedWallet.name;
         
         // Connect to backend and check Genesis NFT
         await connectWallet(publicKey);
         
         // Update UI with wallet name
         const walletInfo = document.getElementById('wallet-info');
-        walletInfo.querySelector('.wallet-address').textContent = `${walletName}: ${formatWalletAddress(publicKey)}`;
+        walletInfo.querySelector('.wallet-address').textContent = `${selectedWallet.name}: ${formatWalletAddress(publicKey)}`;
         
         hideLoading();
-        showToast(`Connected to ${walletName}!`);
+        showToast(`Connected to ${selectedWallet.name}!`);
         
     } catch (error) {
         hideLoading();
         console.error('Connection error:', error);
         showToast('Failed to connect wallet: ' + error.message, 'error');
+    }
+});
+
+// Disconnect Wallet Button
+document.getElementById('disconnect-wallet')?.addEventListener('click', async () => {
+    try {
+        if (state.walletAdapter) {
+            await state.walletAdapter.disconnect();
+        }
+        
+        // Reset state
+        state.wallet = null;
+        state.user = null;
+        state.hasGenesis = false;
+        state.subscriptionActive = false;
+        state.walletAdapter = null;
+        state.walletName = null;
+        
+        // Update UI
+        document.getElementById('connect-wallet').style.display = 'block';
+        document.getElementById('wallet-info').style.display = 'none';
+        document.getElementById('genesis-banner').style.display = 'none';
+        document.getElementById('subscription-notice').style.display = 'none';
+        
+        // Clear all tab content
+        document.getElementById('bills-list').innerHTML = '';
+        document.getElementById('subscriptions-list').innerHTML = '';
+        document.getElementById('expenses-list').innerHTML = '';
+        
+        showToast('Wallet disconnected');
+    } catch (error) {
+        console.error('Disconnect error:', error);
+        showToast('Failed to disconnect', 'error');
     }
 });
 
