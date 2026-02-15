@@ -318,6 +318,20 @@ async function connectWallet(walletAddress) {
             })
         });
         
+        // Check if response is actually JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.error('Backend returned non-JSON response');
+            // Fallback: assume no Genesis NFT, allow connection anyway
+            state.wallet = walletAddress;
+            state.user = { hasGenesis: false, subscriptionActive: false };
+            state.hasGenesis = false;
+            state.subscriptionActive = false;
+            updateUI();
+            showToast('Connected! (Genesis check unavailable)', 'success');
+            return;
+        }
+        
         const data = await response.json();
         
         if (!data.success) {
@@ -339,7 +353,13 @@ async function connectWallet(walletAddress) {
         }
     } catch (error) {
         console.error('Connect wallet error:', error);
-        throw error;
+        // Fallback: allow connection even if backend fails
+        state.wallet = walletAddress;
+        state.user = { hasGenesis: false, subscriptionActive: false };
+        state.hasGenesis = false;
+        state.subscriptionActive = false;
+        updateUI();
+        showToast('Connected! (Some features may be limited)', 'success');
     }
 }
 
