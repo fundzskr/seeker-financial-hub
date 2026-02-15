@@ -308,12 +308,27 @@ async function disconnectWallet() {
 
 async function connectWallet(walletAddress) {
     try {
-        const response = await fetch(`${API_BASE}/api/auth/connect`, {
+        // First, explicitly check for Genesis NFT
+        const genesisCheck = await fetch(`${API_BASE}/api/genesis/check`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 walletAddress,
                 genesisMint: GENESIS_NFT_MINT 
+            })
+        });
+        
+        const genesisData = await genesisCheck.json();
+        console.log('Genesis Check Response:', genesisData);
+        
+        // Then connect to auth
+        const response = await fetch(`${API_BASE}/api/auth/connect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                walletAddress,
+                genesisMint: GENESIS_NFT_MINT,
+                hasGenesis: genesisData.hasGenesis || false
             })
         });
         
@@ -325,14 +340,19 @@ async function connectWallet(walletAddress) {
         
         state.wallet = walletAddress;
         state.user = data.user;
-        state.hasGenesis = data.user.hasGenesis;
+        // Use explicit Genesis check result
+        state.hasGenesis = genesisData.hasGenesis || data.user.hasGenesis || false;
         state.subscriptionActive = data.user.subscriptionActive;
+        
+        console.log('Has Genesis NFT:', state.hasGenesis);
         
         updateUI();
         
         // Show special message for Genesis holders
         if (state.hasGenesis) {
             showToast('🎉 Genesis NFT Holder Detected! You have 50% OFF all fees!', 'success');
+        } else {
+            console.log('No Genesis NFT found for wallet:', walletAddress);
         }
     } catch (error) {
         console.error('Connect wallet error:', error);
@@ -374,13 +394,21 @@ document.getElementById('subscribe-btn')?.addEventListener('click', async () => 
         return;
     }
     
+    if (!state.walletAdapter) {
+        showToast('Please reconnect your wallet', 'error');
+        return;
+    }
+    
     try {
         showLoading();
         
         const response = await fetch(`${API_BASE}/api/subscriptions/platform/subscribe`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walletAddress: state.wallet })
+            body: JSON.stringify({ 
+                walletAddress: state.wallet,
+                hasGenesis: state.hasGenesis
+            })
         });
         
         const data = await response.json();
@@ -389,25 +417,47 @@ document.getElementById('subscribe-btn')?.addEventListener('click', async () => 
             throw new Error(data.error);
         }
         
-        // In production, sign and send transaction
-        // For demo, simulate payment
-        const mockSignature = 'sig' + Math.random().toString(36).substring(7);
+        // Create real Solana transaction for subscription payment
+        const amount = state.hasGenesis ? 4.99 : 9.99; // Genesis holders pay $4.99, others $9.99
+        const lamports = Math.floor(amount * 1000000); // Convert to lamports (rough SOL conversion)
         
-        const confirmResponse = await fetch(`${API_BASE}/api/subscriptions/platform/confirm`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                walletAddress: state.wallet,
-                signature: mockSignature
-            })
-        });
-        
-        const confirmData = await confirmResponse.json();
-        
-        if (confirmData.success) {
-            state.subscriptionActive = true;
-            document.getElementById('subscription-notice').style.display = 'none';
-            showToast('Subscription activated! Welcome aboard! 🎉');
+        try {
+            // Request transaction from wallet
+            const transaction = {
+                instructions: [{
+                    programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+                    data: Buffer.from([amount]),
+                }],
+            };
+            
+            // Sign and send transaction
+            const signature = await state.walletAdapter.signAndSendTransaction(transaction);
+            
+            // Confirm payment with backend
+            const confirmResponse = await fetch(`${API_BASE}/api/subscriptions/platform/confirm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    walletAddress: state.wallet,
+                    signature: signature
+                })
+            });
+            
+            const confirmData = await confirmResponse.json();
+            
+            if (confirmData.success) {
+                state.subscriptionActive = true;
+                document.getElementById('subscription-notice').style.display = 'none';
+                showToast(`Subscription activated! ${state.hasGenesis ? 'Genesis discount applied!' : 'Welcome aboard!'} 🎉`);
+            }
+        } catch (txError) {
+            hideLoading();
+            if (txError.message?.includes('User rejected')) {
+                showToast('Payment cancelled', 'error');
+            } else {
+                showToast('Payment failed: ' + txError.message, 'error');
+            }
+            return;
         }
         
         hideLoading();
