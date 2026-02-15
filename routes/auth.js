@@ -1,106 +1,83 @@
 const express = require('express');
 const router = express.Router();
-const { hasGenesisToken, getSubscriptionPrice } = require('../utils/genesis');
-const db = require('../utils/database');
+const fetch = require('node-fetch');
+
+// Get Helius API key from environment
+const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
+const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 
 /**
+ * Connect wallet and check Genesis NFT ownership
  * POST /api/auth/connect
- * Connect wallet and verify Genesis Token status
+ * Body: { walletAddress, genesisMint }
  */
 router.post('/connect', async (req, res) => {
-  try {
-    const { walletAddress } = req.body;
-
-    if (!walletAddress) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Wallet address required' 
-      });
+    try {
+        const { walletAddress, genesisMint } = req.body;
+        
+        if (!walletAddress) {
+            return res.json({ 
+                success: false, 
+                error: 'Wallet address required' 
+            });
+        }
+        
+        console.log('Connecting wallet:', walletAddress);
+        
+        // Check for Genesis NFT if mint provided and Helius configured
+        let hasGenesis = false;
+        
+        if (genesisMint && HELIUS_API_KEY) {
+            try {
+                const response = await fetch(HELIUS_RPC_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 'auth-genesis-check',
+                        method: 'getTokenAccountsByOwner',
+                        params: [
+                            walletAddress,
+                            { programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' },
+                            { encoding: 'jsonParsed' }
+                        ]
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!data.error && data.result) {
+                    hasGenesis = data.result.value.some(account => {
+                        const mint = account.account.data.parsed.info.mint;
+                        const amount = account.account.data.parsed.info.tokenAmount.uiAmount;
+                        return mint === genesisMint && amount > 0;
+                    });
+                    
+                    console.log('Genesis NFT check result:', hasGenesis);
+                }
+            } catch (error) {
+                console.error('Genesis check failed:', error.message);
+            }
+        }
+        
+        // Return user data
+        res.json({
+            success: true,
+            user: {
+                walletAddress,
+                hasGenesis,
+                subscriptionActive: hasGenesis, // Genesis holders get automatic subscription
+                connectedAt: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('Auth connect error:', error);
+        res.json({ 
+            success: false, 
+            error: error.message 
+        });
     }
-
-    // Check if user already exists
-    let user = db.getUser(walletAddress);
-
-    // Check Genesis Token status
-    const hasGenesis = await hasGenesisToken(walletAddress);
-
-    if (!user) {
-      // Create new user
-      user = db.createUser(walletAddress, hasGenesis);
-    } else {
-      // Update Genesis status (in case they acquired it)
-      user = db.updateUser(walletAddress, { hasGenesis });
-    }
-
-    // Get subscription price for this user
-    const subscriptionPrice = getSubscriptionPrice(hasGenesis);
-
-    res.json({
-      success: true,
-      user: {
-        walletAddress: user.walletAddress,
-        hasGenesis: user.hasGenesis,
-        subscriptionActive: user.subscriptionActive,
-        subscriptionExpiry: user.subscriptionExpiry
-      },
-      pricing: {
-        hasGenesisDiscount: hasGenesis,
-        discountPercent: hasGenesis ? 50 : 0,
-        monthlyPrice: subscriptionPrice,
-        transactionFeePercent: 1,
-        transactionFeeDiscounted: hasGenesis ? 0.5 : 1
-      }
-    });
-  } catch (error) {
-    console.error('Auth error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to authenticate' 
-    });
-  }
-});
-
-/**
- * GET /api/auth/user/:walletAddress
- * Get user profile
- */
-router.get('/user/:walletAddress', (req, res) => {
-  try {
-    const { walletAddress } = req.params;
-    const user = db.getUser(walletAddress);
-
-    if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'User not found' 
-      });
-    }
-
-    const subscriptionPrice = getSubscriptionPrice(user.hasGenesis);
-
-    res.json({
-      success: true,
-      user: {
-        walletAddress: user.walletAddress,
-        hasGenesis: user.hasGenesis,
-        subscriptionActive: user.subscriptionActive,
-        subscriptionExpiry: user.subscriptionExpiry
-      },
-      pricing: {
-        hasGenesisDiscount: user.hasGenesis,
-        discountPercent: user.hasGenesis ? 50 : 0,
-        monthlyPrice: subscriptionPrice,
-        transactionFeePercent: 1,
-        transactionFeeDiscounted: user.hasGenesis ? 0.5 : 1
-      }
-    });
-  } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to get user' 
-    });
-  }
 });
 
 module.exports = router;
