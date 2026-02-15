@@ -492,12 +492,6 @@ document.getElementById('subscribe-btn')?.addEventListener('click', async () => 
         }
     }
 });
-        
-    } catch (error) {
-        hideLoading();
-        showToast('Subscription failed: ' + error.message, 'error');
-    }
-});
 
 // Load Tab Data
 async function loadTabData(tabName) {
