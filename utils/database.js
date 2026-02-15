@@ -13,15 +13,17 @@ class Database {
   }
 
   // USER OPERATIONS
-  createUser(walletAddress, hasGenesis) {
+  createUser(userData) {
+    const { walletAddress, hasGenesis, subscriptionActive, createdAt } = userData;
     const user = {
       walletAddress,
-      hasGenesis,
-      createdAt: new Date().toISOString(),
-      subscriptionActive: false,
+      hasGenesis: hasGenesis || false,
+      createdAt: createdAt || new Date().toISOString(),
+      subscriptionActive: subscriptionActive || false,
       subscriptionExpiry: null
     };
     this.users.set(walletAddress, user);
+    console.log('User created in database:', walletAddress);
     return user;
   }
 
