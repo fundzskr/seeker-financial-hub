@@ -390,7 +390,7 @@ function updateUI() {
     }
 }
 
-// Subscribe Button
+// Subscribe Button - REAL SOLANA TRANSACTION WITH REAL-TIME PRICING
 document.getElementById('subscribe-btn')?.addEventListener('click', async () => {
     if (!state.wallet) {
         showToast('Please connect wallet first', 'error');
@@ -405,69 +405,93 @@ document.getElementById('subscribe-btn')?.addEventListener('click', async () => 
     try {
         showLoading();
         
-        // Get subscription details from backend
-        const response = await fetch(`${API_BASE}/api/subscriptions/platform/subscribe`, {
+        // Import Solana web3
+        const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = window.solanaWeb3;
+        
+        // Get subscription price in USD
+        const priceUSD = state.hasGenesis ? 4.99 : 9.99;
+        
+        // Fetch real-time SOL price from CoinGecko API
+        showToast('Fetching current SOL price...', 'info');
+        const priceResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
+        const priceData = await priceResponse.json();
+        const solPriceUSD = priceData.solana.usd;
+        
+        // Calculate exact SOL amount needed for the USD price
+        const solAmount = priceUSD / solPriceUSD;
+        const lamports = Math.floor(solAmount * LAMPORTS_PER_SOL);
+        
+        console.log(`Payment: $${priceUSD} = ${solAmount.toFixed(4)} SOL (1 SOL = $${solPriceUSD})`);
+        
+        // Treasury wallet
+        const treasuryWallet = new PublicKey('31d7PLJGphEzBEzobaDyn8B5p9UiLs15WMF24set2yea');
+        
+        // Create connection to Solana
+        const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+        
+        // Create transfer instruction
+        const transaction = new Transaction().add(
+            SystemProgram.transfer({
+                fromPubkey: state.walletAdapter.publicKey,
+                toPubkey: treasuryWallet,
+                lamports: lamports,
+            })
+        );
+        
+        // Get recent blockhash
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = state.walletAdapter.publicKey;
+        
+        showToast(`Please approve ${solAmount.toFixed(4)} SOL ($${priceUSD}) payment in your wallet...`, 'info');
+        
+        // Send transaction through wallet
+        const signedTx = await state.walletAdapter.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signedTx.serialize());
+        
+        showToast('Transaction sent! Waiting for confirmation...', 'info');
+        
+        // Wait for confirmation
+        await connection.confirmTransaction(signature, 'confirmed');
+        
+        // Confirm with backend
+        const confirmResponse = await fetch(`${API_BASE}/api/subscriptions/platform/confirm`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 walletAddress: state.wallet,
-                hasGenesis: state.hasGenesis
+                signature: signature,
+                amountUSD: priceUSD,
+                amountSOL: solAmount,
+                solPrice: solPriceUSD
             })
         });
         
-        const data = await response.json();
+        const confirmData = await confirmResponse.json();
         
-        if (!data.success) {
+        if (confirmData.success) {
+            state.subscriptionActive = true;
+            document.getElementById('subscription-notice').style.display = 'none';
             hideLoading();
-            throw new Error(data.error);
+            showToast(`✅ Subscription activated! Paid ${solAmount.toFixed(4)} SOL ($${priceUSD}) 🎉`, 'success');
+        } else {
+            hideLoading();
+            showToast('Subscription confirmation failed', 'error');
         }
         
-        // Show wallet payment prompt (simplified - wallet will handle transaction)
-        const amount = state.hasGenesis ? 4.99 : 9.99;
+    } catch (error) {
+        hideLoading();
+        console.error('Subscribe error:', error);
         
-        showToast(`Please approve $${amount} payment in your wallet...`, 'info');
-        
-        // In a real implementation, you'd get a transaction from the backend
-        // For now, simulate the signature request
-        try {
-            // This will prompt the wallet
-            const mockTx = { message: `Subscribe for $${amount}/month` };
-            
-            // Wallet prompts user
-            showToast('Check your wallet to approve payment', 'info');
-            
-            // Simulate successful payment for now
-            setTimeout(async () => {
-                const confirmResponse = await fetch(`${API_BASE}/api/subscriptions/platform/confirm`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        walletAddress: state.wallet,
-                        signature: 'demo_' + Date.now()
-                    })
-                });
-                
-                const confirmData = await confirmResponse.json();
-                
-                if (confirmData.success) {
-                    state.subscriptionActive = true;
-                    document.getElementById('subscription-notice').style.display = 'none';
-                    hideLoading();
-                    showToast(`Subscription activated! ${state.hasGenesis ? 'Genesis discount applied!' : 'Welcome aboard!'} 🎉`, 'success');
-                } else {
-                    hideLoading();
-                    showToast('Subscription confirmation failed', 'error');
-                }
-            }, 2000);
-            
-        } catch (txError) {
-            hideLoading();
-            if (txError.message?.includes('User rejected')) {
-                showToast('Payment cancelled', 'error');
-            } else {
-                showToast('Payment failed: ' + txError.message, 'error');
-            }
+        if (error.message?.includes('User rejected')) {
+            showToast('Payment cancelled', 'error');
+        } else if (error.message?.includes('insufficient')) {
+            showToast('Insufficient SOL balance', 'error');
+        } else {
+            showToast('Payment failed: ' + error.message, 'error');
         }
+    }
+});
         
     } catch (error) {
         hideLoading();
@@ -1026,7 +1050,7 @@ function renderProfile(profile) {
                     <div class="stat-label">Genesis NFT Benefits</div>
                     <p style="margin: 8px 0; font-size: 13px;">Exclusive to Solana Seeker phone owners</p>
                     <p style="margin: 8px 0;">Get 50% off forever + exclusive benefits</p>
-                    <a href="https://www.osom.com/products/solana-saga" target="_blank" class="btn btn-premium btn-sm">
+                    <a href="https://solanamobile.com" target="_blank" class="btn btn-premium btn-sm">
                         Learn About Seeker Phone
                     </a>
                 </div>
