@@ -1023,10 +1023,11 @@ function renderProfile(profile) {
             ` : `
                 <div class="stat-card upgrade-card">
                     <div class="stat-icon">🌟</div>
-                    <div class="stat-label">Upgrade to Genesis</div>
+                    <div class="stat-label">Genesis NFT Benefits</div>
+                    <p style="margin: 8px 0; font-size: 13px;">Exclusive to Solana Seeker phone owners</p>
                     <p style="margin: 8px 0;">Get 50% off forever + exclusive benefits</p>
-                    <a href="https://magiceden.io" target="_blank" class="btn btn-premium btn-sm">
-                        Get Genesis NFT
+                    <a href="https://www.osom.com/products/solana-saga" target="_blank" class="btn btn-premium btn-sm">
+                        Learn About Seeker Phone
                     </a>
                 </div>
             `}
