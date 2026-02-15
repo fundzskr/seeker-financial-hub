@@ -308,27 +308,13 @@ async function disconnectWallet() {
 
 async function connectWallet(walletAddress) {
     try {
-        // First, explicitly check for Genesis NFT
-        const genesisCheck = await fetch(`${API_BASE}/api/genesis/check`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                walletAddress,
-                genesisMint: GENESIS_NFT_MINT 
-            })
-        });
-        
-        const genesisData = await genesisCheck.json();
-        console.log('Genesis Check Response:', genesisData);
-        
-        // Then connect to auth
+        // Connect to auth endpoint - backend will check Genesis NFT
         const response = await fetch(`${API_BASE}/api/auth/connect`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 walletAddress,
-                genesisMint: GENESIS_NFT_MINT,
-                hasGenesis: genesisData.hasGenesis || false
+                genesisMint: GENESIS_NFT_MINT 
             })
         });
         
@@ -340,19 +326,16 @@ async function connectWallet(walletAddress) {
         
         state.wallet = walletAddress;
         state.user = data.user;
-        // Use explicit Genesis check result
-        state.hasGenesis = genesisData.hasGenesis || data.user.hasGenesis || false;
+        state.hasGenesis = data.user.hasGenesis || false;
         state.subscriptionActive = data.user.subscriptionActive;
         
-        console.log('Has Genesis NFT:', state.hasGenesis);
+        console.log('Connected! Has Genesis:', state.hasGenesis);
         
         updateUI();
         
         // Show special message for Genesis holders
         if (state.hasGenesis) {
             showToast('🎉 Genesis NFT Holder Detected! You have 50% OFF all fees!', 'success');
-        } else {
-            console.log('No Genesis NFT found for wallet:', walletAddress);
         }
     } catch (error) {
         console.error('Connect wallet error:', error);
