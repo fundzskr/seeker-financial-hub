@@ -81,11 +81,11 @@ document.getElementById('connect-wallet').addEventListener('click', async () => 
         // Detect all available wallets
         const availableWallets = [];
         
-        if (window.seeker) availableWallets.push({ name: 'Seeker', adapter: window.seeker });
-        if (window.solana?.isPhantom) availableWallets.push({ name: 'Phantom', adapter: window.solana });
-        if (window.solflare) availableWallets.push({ name: 'Solflare', adapter: window.solflare });
-        if (window.backpack) availableWallets.push({ name: 'Backpack', adapter: window.backpack });
-        if (window.glow) availableWallets.push({ name: 'Glow', adapter: window.glow });
+        if (window.seeker) availableWallets.push({ name: 'Seeker', adapter: window.seeker, icon: '🔮' });
+        if (window.solana?.isPhantom) availableWallets.push({ name: 'Phantom', adapter: window.solana, icon: '👻' });
+        if (window.solflare) availableWallets.push({ name: 'Solflare', adapter: window.solflare, icon: '☀️' });
+        if (window.backpack) availableWallets.push({ name: 'Backpack', adapter: window.backpack, icon: '🎒' });
+        if (window.glow) availableWallets.push({ name: 'Glow', adapter: window.glow, icon: '✨' });
         
         if (availableWallets.length === 0) {
             hideLoading();
@@ -93,28 +93,125 @@ document.getElementById('connect-wallet').addEventListener('click', async () => 
             return;
         }
         
-        let selectedWallet;
+        hideLoading();
         
-        // If multiple wallets, let user choose
+        // If multiple wallets, show professional modal
         if (availableWallets.length > 1) {
-            hideLoading();
-            const walletNames = availableWallets.map((w, i) => `${i + 1}. ${w.name}`).join('\n');
-            const choice = prompt(`Multiple wallets detected! Choose one:\n\n${walletNames}\n\nEnter the number (1-${availableWallets.length}):`);
+            const selectedWallet = await showWalletModal(availableWallets);
+            if (!selectedWallet) return;
             
-            if (!choice) return;
-            
-            const index = parseInt(choice) - 1;
-            if (index < 0 || index >= availableWallets.length) {
-                showToast('Invalid selection', 'error');
-                return;
-            }
-            
-            selectedWallet = availableWallets[index];
             showLoading();
+            await connectToWallet(selectedWallet);
         } else {
-            selectedWallet = availableWallets[0];
+            showLoading();
+            await connectToWallet(availableWallets[0]);
         }
         
+    } catch (error) {
+        hideLoading();
+        console.error('Connection error:', error);
+        showToast('Failed to connect wallet: ' + error.message, 'error');
+    }
+});
+
+// Professional wallet selection modal
+function showWalletModal(wallets) {
+    return new Promise((resolve) => {
+        // Create modal
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+            background: #1a1a2e;
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        `;
+        
+        modalContent.innerHTML = `
+            <h2 style="color: #fff; margin: 0 0 24px 0; font-size: 24px; text-align: center;">
+                Connect Wallet
+            </h2>
+            <div id="wallet-buttons"></div>
+            <button id="cancel-wallet" style="
+                width: 100%;
+                padding: 14px;
+                margin-top: 16px;
+                background: transparent;
+                border: 2px solid #666;
+                color: #fff;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 16px;
+            ">Cancel</button>
+        `;
+        
+        const buttonsContainer = modalContent.querySelector('#wallet-buttons');
+        
+        // Create button for each wallet
+        wallets.forEach(wallet => {
+            const button = document.createElement('button');
+            button.style.cssText = `
+                width: 100%;
+                padding: 16px;
+                margin-bottom: 12px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border: none;
+                color: #fff;
+                border-radius: 12px;
+                cursor: pointer;
+                font-size: 18px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 12px;
+                transition: transform 0.2s, box-shadow 0.2s;
+            `;
+            button.innerHTML = `<span style="font-size: 24px;">${wallet.icon}</span> ${wallet.name}`;
+            
+            button.onmouseover = () => {
+                button.style.transform = 'translateY(-2px)';
+                button.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+            };
+            button.onmouseout = () => {
+                button.style.transform = 'translateY(0)';
+                button.style.boxShadow = 'none';
+            };
+            
+            button.onclick = () => {
+                document.body.removeChild(modal);
+                resolve(wallet);
+            };
+            
+            buttonsContainer.appendChild(button);
+        });
+        
+        modalContent.querySelector('#cancel-wallet').onclick = () => {
+            document.body.removeChild(modal);
+            resolve(null);
+        };
+        
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+    });
+}
+
+async function connectToWallet(selectedWallet) {
+    try {
         // Connect to selected wallet
         await selectedWallet.adapter.connect();
         const publicKey = selectedWallet.adapter.publicKey.toString();
