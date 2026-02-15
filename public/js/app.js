@@ -235,7 +235,7 @@ async function connectToWallet(selectedWallet) {
         console.error('Connection error:', error);
         showToast('Failed to connect wallet: ' + error.message, 'error');
     }
-});
+}
 
 // Disconnect Wallet Button
 document.getElementById('disconnect-wallet')?.addEventListener('click', async () => {
