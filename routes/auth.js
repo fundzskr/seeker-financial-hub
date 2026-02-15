@@ -6,6 +6,9 @@ const fetch = require('node-fetch');
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 
+// Import database utility
+const db = require('../utils/database');
+
 /**
  * Connect wallet and check Genesis NFT ownership
  * POST /api/auth/connect
@@ -60,13 +63,34 @@ router.post('/connect', async (req, res) => {
             }
         }
         
+        // Get or create user in database
+        let user = db.getUser(walletAddress);
+        
+        if (!user) {
+            // Create new user
+            user = db.createUser({
+                walletAddress,
+                hasGenesis,
+                subscriptionActive: hasGenesis, // Genesis holders get automatic subscription
+                createdAt: new Date().toISOString()
+            });
+            console.log('Created new user:', walletAddress);
+        } else {
+            // Update existing user's Genesis status
+            user = db.updateUser(walletAddress, {
+                hasGenesis,
+                subscriptionActive: hasGenesis || user.subscriptionActive
+            });
+            console.log('Updated existing user:', walletAddress);
+        }
+        
         // Return user data
         res.json({
             success: true,
             user: {
                 walletAddress,
                 hasGenesis,
-                subscriptionActive: hasGenesis, // Genesis holders get automatic subscription
+                subscriptionActive: user.subscriptionActive,
                 connectedAt: new Date().toISOString()
             }
         });
