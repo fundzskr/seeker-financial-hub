@@ -1,8 +1,5 @@
 // Solana Financial Hub - Frontend Application
-// Production version with real wallet detection and Genesis NFT verification
-
-// Genesis NFT Token Address
-const GENESIS_NFT_MINT = '9USAzZqpZrXYb8JHP1tvHh37YVFNj65TRhwZynnfMNxH';
+// This is a web demo - for native Android app, we'll use React Native with Mobile Wallet Adapter
 
 // API Base URL
 const API_BASE = window.location.origin;
@@ -13,9 +10,7 @@ const state = {
     user: null,
     hasGenesis: false,
     subscriptionActive: false,
-    currentTab: 'bills',
-    walletAdapter: null,
-    walletName: null
+    currentTab: 'bills'
 };
 
 // Utility Functions
@@ -73,248 +68,32 @@ function switchTab(tabName) {
     }
 }
 
-// Real Wallet Connection with Genesis NFT Verification
+// Wallet Connection (Simulated for web demo)
 document.getElementById('connect-wallet').addEventListener('click', async () => {
     try {
         showLoading();
         
-        // Detect all available wallets
-        const availableWallets = [];
+        // In production, use Phantom/Solflare wallet adapter
+        // For demo, simulate wallet connection
+        const mockWallet = prompt('Enter wallet address (or leave blank for demo):') || 
+                          'Demo' + Math.random().toString(36).substring(7);
         
-        if (window.seeker) availableWallets.push({ name: 'Seeker', adapter: window.seeker, icon: '🔮' });
-        if (window.solana?.isPhantom) availableWallets.push({ name: 'Phantom', adapter: window.solana, icon: '👻' });
-        if (window.solflare) availableWallets.push({ name: 'Solflare', adapter: window.solflare, icon: '☀️' });
-        if (window.backpack) availableWallets.push({ name: 'Backpack', adapter: window.backpack, icon: '🎒' });
-        if (window.glow) availableWallets.push({ name: 'Glow', adapter: window.glow, icon: '✨' });
-        
-        if (availableWallets.length === 0) {
-            hideLoading();
-            showToast('No Solana wallet detected! Please install Phantom, Solflare, Seeker, or another Solana wallet.', 'error');
-            return;
-        }
+        await connectWallet(mockWallet);
         
         hideLoading();
-        
-        // If multiple wallets, show professional modal
-        if (availableWallets.length > 1) {
-            const selectedWallet = await showWalletModal(availableWallets);
-            if (!selectedWallet) return;
-            
-            showLoading();
-            await connectToWallet(selectedWallet);
-        } else {
-            showLoading();
-            await connectToWallet(availableWallets[0]);
-        }
-        
+        showToast('Wallet connected successfully!');
     } catch (error) {
         hideLoading();
-        console.error('Connection error:', error);
         showToast('Failed to connect wallet: ' + error.message, 'error');
     }
 });
-
-// Professional wallet selection modal
-function showWalletModal(wallets) {
-    return new Promise((resolve) => {
-        // Create modal
-        const modal = document.createElement('div');
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-        `;
-        
-        const modalContent = document.createElement('div');
-        modalContent.style.cssText = `
-            background: #1a1a2e;
-            border-radius: 16px;
-            padding: 32px;
-            max-width: 400px;
-            width: 90%;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-        `;
-        
-        modalContent.innerHTML = `
-            <h2 style="color: #fff; margin: 0 0 24px 0; font-size: 24px; text-align: center;">
-                Connect Wallet
-            </h2>
-            <div id="wallet-buttons"></div>
-            <button id="cancel-wallet" style="
-                width: 100%;
-                padding: 14px;
-                margin-top: 16px;
-                background: transparent;
-                border: 2px solid #666;
-                color: #fff;
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 16px;
-            ">Cancel</button>
-        `;
-        
-        const buttonsContainer = modalContent.querySelector('#wallet-buttons');
-        
-        // Create button for each wallet
-        wallets.forEach(wallet => {
-            const button = document.createElement('button');
-            button.style.cssText = `
-                width: 100%;
-                padding: 16px;
-                margin-bottom: 12px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border: none;
-                color: #fff;
-                border-radius: 12px;
-                cursor: pointer;
-                font-size: 18px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 12px;
-                transition: transform 0.2s, box-shadow 0.2s;
-            `;
-            button.innerHTML = `<span style="font-size: 24px;">${wallet.icon}</span> ${wallet.name}`;
-            
-            button.onmouseover = () => {
-                button.style.transform = 'translateY(-2px)';
-                button.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
-            };
-            button.onmouseout = () => {
-                button.style.transform = 'translateY(0)';
-                button.style.boxShadow = 'none';
-            };
-            
-            button.onclick = () => {
-                document.body.removeChild(modal);
-                resolve(wallet);
-            };
-            
-            buttonsContainer.appendChild(button);
-        });
-        
-        modalContent.querySelector('#cancel-wallet').onclick = () => {
-            document.body.removeChild(modal);
-            resolve(null);
-        };
-        
-        modal.appendChild(modalContent);
-        document.body.appendChild(modal);
-    });
-}
-
-async function connectToWallet(selectedWallet) {
-    try {
-        showLoading();
-        
-        // Request permission from wallet (this will show wallet popup)
-        const resp = await selectedWallet.adapter.connect();
-        
-        if (!selectedWallet.adapter.publicKey) {
-            hideLoading();
-            showToast('Wallet connection cancelled', 'error');
-            return;
-        }
-        
-        const publicKey = selectedWallet.adapter.publicKey.toString();
-        
-        // Store wallet adapter for transaction signing
-        state.walletAdapter = selectedWallet.adapter;
-        state.walletName = selectedWallet.name;
-        
-        // Connect to backend and check Genesis NFT
-        await connectWallet(publicKey);
-        
-        // Update UI with wallet name and disconnect button
-        const walletInfo = document.getElementById('wallet-info');
-        walletInfo.innerHTML = `
-            <div class="wallet-address">${selectedWallet.name}: ${formatWalletAddress(publicKey)}</div>
-            <button id="disconnect-btn" class="btn btn-secondary btn-sm">Disconnect</button>
-            <div class="genesis-badge" style="display: ${state.hasGenesis ? 'block' : 'none'};">
-                <span class="badge badge-premium">⭐ Genesis - 50% OFF!</span>
-            </div>
-        `;
-        
-        // Add disconnect handler
-        document.getElementById('disconnect-btn').addEventListener('click', disconnectWallet);
-        
-        hideLoading();
-        showToast(`Connected to ${selectedWallet.name}!`);
-        
-    } catch (error) {
-        hideLoading();
-        console.error('Connection error:', error);
-        if (error.message?.includes('User rejected')) {
-            showToast('Connection cancelled', 'error');
-        } else {
-            showToast('Failed to connect wallet: ' + error.message, 'error');
-        }
-    }
-}
-
-// Disconnect Wallet Function
-async function disconnectWallet() {
-    try {
-        if (state.walletAdapter) {
-            await state.walletAdapter.disconnect();
-        }
-        
-        // Reset state
-        state.wallet = null;
-        state.user = null;
-        state.hasGenesis = false;
-        state.subscriptionActive = false;
-        state.walletAdapter = null;
-        state.walletName = null;
-        
-        // Update UI
-        document.getElementById('connect-wallet').style.display = 'block';
-        document.getElementById('wallet-info').style.display = 'none';
-        document.getElementById('wallet-info').innerHTML = `
-            <div class="wallet-address"></div>
-            <div class="genesis-badge" style="display: none;">
-                <span class="badge badge-premium">⭐ Genesis Token Holder - 50% OFF Forever!</span>
-            </div>
-        `;
-        document.getElementById('genesis-banner').style.display = 'none';
-        document.getElementById('subscription-notice').style.display = 'none';
-        
-        // Clear all tab content
-        document.getElementById('bills-list').innerHTML = '';
-        document.getElementById('subscriptions-list').innerHTML = '';
-        document.getElementById('expenses-list').innerHTML = '';
-        document.getElementById('expenses-analytics').innerHTML = '';
-        
-        // Hide profile if visible
-        const profileTab = document.getElementById('profile-tab');
-        if (profileTab) profileTab.classList.remove('active');
-        
-        // Show bills tab
-        document.querySelector('[data-tab="bills"]').click();
-        
-        showToast('Wallet disconnected');
-    } catch (error) {
-        console.error('Disconnect error:', error);
-        showToast('Failed to disconnect', 'error');
-    }
-}
 
 async function connectWallet(walletAddress) {
     try {
         const response = await fetch(`${API_BASE}/api/auth/connect`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                walletAddress,
-                genesisMint: GENESIS_NFT_MINT 
-            })
+            body: JSON.stringify({ walletAddress })
         });
         
         const data = await response.json();
@@ -329,11 +108,6 @@ async function connectWallet(walletAddress) {
         state.subscriptionActive = data.user.subscriptionActive;
         
         updateUI();
-        
-        // Show special message for Genesis holders
-        if (state.hasGenesis) {
-            showToast('🎉 Genesis NFT Holder Detected! You have 50% OFF all fees!', 'success');
-        }
     } catch (error) {
         console.error('Connect wallet error:', error);
         throw error;
@@ -349,6 +123,7 @@ function updateUI() {
     if (state.wallet) {
         connectBtn.style.display = 'none';
         walletInfo.style.display = 'block';
+        walletInfo.querySelector('.wallet-address').textContent = formatWalletAddress(state.wallet);
         
         // Show Genesis badge if user has token
         if (state.hasGenesis) {
@@ -428,9 +203,6 @@ async function loadTabData(tabName) {
             break;
         case 'expenses':
             await loadExpenses();
-            break;
-        case 'profile':
-            await loadProfile();
             break;
     }
 }
@@ -625,33 +397,56 @@ async function loadSubscriptions() {
             throw new Error(data.error);
         }
         
-        renderSubscriptions(data.subscriptions || []);
+        renderSubscriptions(data.subscriptions || [], data.analytics);
     } catch (error) {
         console.error('Load subscriptions error:', error);
         showToast('Failed to load subscriptions', 'error');
     }
 }
 
-function renderSubscriptions(subscriptions) {
-    const container = document.getElementById('subscriptions-list');
+function renderSubscriptions(subscriptions, analytics) {
+    const analyticsContainer = document.getElementById('subscriptions-analytics');
+    const listContainer = document.getElementById('subscriptions-list');
     
+    // Render analytics
+    if (analytics) {
+        analyticsContainer.innerHTML = `
+            <h3>📊 Subscription Analytics</h3>
+            <div class="analytics-grid">
+                <div class="analytics-item">
+                    <div class="analytics-label">Active Subscriptions</div>
+                    <div class="analytics-value">${analytics.totalActive}</div>
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Monthly Spend</div>
+                    <div class="analytics-value">${formatSOL(analytics.totalMonthlySpend)}</div>
+                </div>
+                <div class="analytics-item">
+                    <div class="analytics-label">Annual Spend</div>
+                    <div class="analytics-value">${formatSOL(analytics.annualizedSpend)}</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Render subscriptions list
     if (subscriptions.length === 0) {
-        container.innerHTML = `
+        listContainer.innerHTML = `
             <div class="list-item" style="text-align: center; padding: 40px;">
-                <p style="color: var(--text-secondary);">No subscriptions tracked. Add your first one!</p>
+                <p style="color: var(--text-secondary);">No subscriptions tracked yet. Add your first subscription!</p>
             </div>
         `;
         return;
     }
     
-    container.innerHTML = subscriptions.map(sub => `
+    listContainer.innerHTML = subscriptions.map(sub => `
         <div class="list-item">
             <div class="list-item-header">
                 <div>
                     <div class="list-item-title">${sub.name}</div>
                     <span class="status-badge status-${sub.status}">${sub.status.toUpperCase()}</span>
                 </div>
-                <div class="list-item-amount">${formatSOL(sub.amount)} / ${sub.billingCycle}</div>
+                <div class="list-item-amount">${formatSOL(sub.amount)}/${sub.billingCycle}</div>
             </div>
             <div class="list-item-meta">
                 <span>📁 ${sub.category}</span>
@@ -877,101 +672,3 @@ function renderExpenses(expenses, analytics) {
 
 // Make cancelSubscription available globally
 window.cancelSubscription = cancelSubscription;
-
-// === PROFILE TAB ===
-async function loadProfile() {
-    if (!state.wallet) return;
-    
-    try {
-        const response = await fetch(`${API_BASE}/api/profile/${state.wallet}`);
-        const data = await response.json();
-        
-        if (!data.success) {
-            throw new Error(data.error);
-        }
-        
-        renderProfile(data.profile || {});
-    } catch (error) {
-        console.error('Load profile error:', error);
-        renderProfile({});
-    }
-}
-
-function renderProfile(profile) {
-    const container = document.getElementById('profile-content');
-    
-    if (!container) return;
-    
-    const accountAge = profile.accountCreated ? 
-        Math.floor((new Date() - new Date(profile.accountCreated)) / (1000 * 60 * 60 * 24)) : 0;
-    
-    container.innerHTML = `
-        <div class="profile-header">
-            <div class="profile-avatar">
-                ${state.hasGenesis ? '👑' : '👤'}
-            </div>
-            <h2>Your Profile</h2>
-            ${state.hasGenesis ? `
-                <div class="genesis-gold-badge">
-                    <span class="gold-badge">✨ GENESIS HOLDER ✨</span>
-                    <p class="gold-badge-subtitle">50% OFF All Fees Forever</p>
-                </div>
-            ` : ''}
-        </div>
-        
-        <div class="profile-stats">
-            <div class="stat-card">
-                <div class="stat-icon">💰</div>
-                <div class="stat-label">Wallet Address</div>
-                <div class="stat-value">${formatWalletAddress(state.wallet)}</div>
-                <div class="stat-subtext">${state.walletName || 'Connected'}</div>
-            </div>
-            
-            <div class="stat-card">
-                <div class="stat-icon">📊</div>
-                <div class="stat-label">Total Bills</div>
-                <div class="stat-value">${profile.stats?.totalBills || 0}</div>
-            </div>
-            
-            <div class="stat-card">
-                <div class="stat-icon">🔄</div>
-                <div class="stat-label">Subscriptions</div>
-                <div class="stat-value">${profile.stats?.totalSubscriptions || 0}</div>
-            </div>
-            
-            <div class="stat-card">
-                <div class="stat-icon">📈</div>
-                <div class="stat-label">Expenses Tracked</div>
-                <div class="stat-value">${profile.stats?.totalExpenses || 0}</div>
-            </div>
-            
-            <div class="stat-card">
-                <div class="stat-icon">📅</div>
-                <div class="stat-label">Member Since</div>
-                <div class="stat-value">${accountAge} days</div>
-            </div>
-            
-            ${state.hasGenesis ? `
-                <div class="stat-card genesis-benefits">
-                    <div class="stat-icon">⭐</div>
-                    <div class="stat-label">Genesis Benefits</div>
-                    <ul class="benefits-list">
-                        <li>✅ 50% off subscription ($4.99/mo)</li>
-                        <li>✅ 0.5% transaction fees (vs 1%)</li>
-                        <li>✅ Priority support</li>
-                        <li>✅ Early access to new features</li>
-                    </ul>
-                </div>
-            ` : `
-                <div class="stat-card upgrade-card">
-                    <div class="stat-icon">🌟</div>
-                    <div class="stat-label">Upgrade to Genesis</div>
-                    <p style="margin: 8px 0;">Get 50% off forever + exclusive benefits</p>
-                    <a href="https://magiceden.io" target="_blank" class="btn btn-premium btn-sm">
-                        Get Genesis NFT
-                    </a>
-                </div>
-            `}
-        </div>
-    `;
-}
